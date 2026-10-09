@@ -4,8 +4,7 @@
  */
 
 import type { PiAIProvider } from '../llm/pi-ai-provider'
-import type { ContextPart, DeferredContext } from '../deferred-context'
-import type { InvocationOutcome } from '../tool-invocation'
+import type { CodeToolCapabilities } from '@/services/code-execution'
 
 /** JSON Schema subset for tool parameter definitions */
 export interface JSONSchemaProperty {
@@ -258,18 +257,7 @@ export interface ToolDefinition {
 /** Context provided to tool executors */
 export interface ToolContext {
   /** Invocation-scoped tool capability, supplied only to run_code. */
-  codeTools?: {
-    names: string[]
-    invoke: (call: {
-      toolName: string
-      toolCallId: string
-      args: Record<string, unknown>
-      signal: AbortSignal
-      onContext: (event: DeferredContext) => void
-    }) => Promise<InvocationOutcome>
-  }
-  /** Append caller context after this invocation completes. */
-  deferContext?: (content: ContextPart[]) => void
+  codeTools?: CodeToolCapabilities
   /** Root directory handle for file operations */
   directoryHandle: FileSystemDirectoryHandle | null
   /** True when this tool call originates from a delegated subagent. */
@@ -339,25 +327,7 @@ export interface ToolContext {
     task: string
     reason?: string
   }) => void
-  /**
-   * Called by read_image after preparing a follow-up user message. The
-   * conversation store owns queueing, persistence, and starting the next run.
-   */
-  onReadImageSuccess?: (payload: {
-    content: string
-    contentParts: Array<
-      | { type: 'text'; text: string }
-      | { type: 'image'; data: string; mimeType: string }
-    >
-    readImage: {
-      path: string
-      mimeType: string
-      /** Raw base64 retained for in-history preview when OCR is used. */
-      imageData?: string
-      toolCallId?: string
-      ocrStatus: 'not_needed' | 'done' | 'empty' | 'failed' | 'timeout'
-    }
-  }) => boolean
+
 }
 
 /** Ask user question type */
