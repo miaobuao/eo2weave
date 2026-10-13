@@ -538,7 +538,7 @@ test.beforeAll(async () => {
     console.log('LIVE_SETUP workspace ready')
     await expect.poll(() => host.evaluate(() => !!(window as any).__agentWeb?.ready)).toBe(true)
     await host.evaluate(() => {
-      ;(window as any).__webmcpE2ECalls = []
+      (window as any).__webmcpE2ECalls = []
       window.addEventListener('message', (event) => {
         if (event.source === window && event.data?.__cwAdapterHost)
           (window as any).__webmcpE2ECalls.push(event.data)
@@ -605,7 +605,7 @@ test.afterAll(async () => {
   if (profile) await rm(profile, { recursive: true, force: true })
 })
 for (const name of allNames) {
-  test(name, async ({}, testInfo) => {
+  test(name, async (_fixtures, testInfo) => {
     if (setupError) {
       await testInfo.attach('setup-diagnostics', {
         body: JSON.stringify(events, null, 2),
@@ -665,7 +665,7 @@ for (const name of allNames) {
   })
 }
 
-test('OPFS copy uses the same workflow and package-relative VFS readers', async ({}, testInfo) => {
+test('OPFS copy uses the same workflow and package-relative VFS readers', async (_fixtures, testInfo) => {
   if (setupError) throw setupError
   const page = await context.newPage()
   try {
