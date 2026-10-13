@@ -26,7 +26,7 @@ ref=$(browser snapshot | jq -er '.nodes[] | select(.role == "button" and .name =
 browser click "$ref" && browser snapshot
 printf 'hello world' | browser fill e20
 browser press Enter
-browser eval '() => document.body.innerText' | jq -r '.buffer'
+browser eval '() => document.body.innerText' | jq -r '.result'
 browser screenshot --full-page | jq -r '.data' | base64 -d > screenshot.png
 ```
 
@@ -68,10 +68,26 @@ mouse buttons persist across calls; failed actions release tracked input state.
 Eval accepts a function, including an async function, or reads its source from
 stdin. The optional target is passed as an element argument. It runs in the page
 with page globals and native fetch. It has no Node environment or nested tool
-proxy. `{tabId,buffer}` preserves ordered console entries and the result, marked
-`[log]`, `[info]`, `[warn]`, `[error]`, `[result]`. Thrown errors retain the buffer
-in JSON error details. Reading DOM text and waiting on page conditions can be
-implemented in eval; orchestration of browser commands belongs to Bash.
+proxy. Success returns `{tabId,logs,result}`. `logs` is an ordered array of
+`{level,args}` entries; each argument and the final `result` preserve JSON types
+(objects, arrays, strings, numbers, booleans and null). Console arguments are
+captured when logged, without joining strings or adding text prefixes.
+
+```json
+{"tabId":123,"logs":[{"level":"log","args":["hello",{"count":2}]}],"result":{"title":"Page title"}}
+```
+
+Use `jq -r '.result.title'` to read the title or
+`jq '.logs[] | select(.level == "warn") | .args'` to filter warnings.
+Undefined and non-finite numbers become null; bigint and symbols become strings,
+functions become descriptive strings, and Error values become `{name,message,stack}`.
+Circular references become `"[Circular]"`; values that cannot be serialized become
+`"[UnserializableValue]"`. Repeated non-circular references preserve their values.
+Thrown errors fail with `{tabId,logs,exception}` in `error.details`, retaining
+prior console output separately from the serialized exception. No `buffer` field
+is emitted. Consumers of the previous format must migrate to `.result` and `.logs`.
+Reading DOM text and waiting on page conditions can be implemented in eval;
+orchestration of browser commands belongs to Bash.
 
 ## Execution and lifecycle
 
@@ -91,6 +107,40 @@ Chrome's `debugger` permission is required. Chrome displays its debugger
 indicator. `browser detach` releases the connection without closing the tab.
 Restricted browser pages and competing debugger clients may reject attachment;
 errors follow the same JSON contract.
+
+## WebMCP workflows
+
+Builtin and custom VFS packages invoke `tools.bash` directly. Every browser
+command specifies the invocation's target tab; no selected-tab state or side-panel
+binding is required. Check the returned exit code, preserve failure details, and
+reject truncated output when parsing complete JSON. `browser eval` returns
+`{tabId, logs, result}` so page logs are separate from business data.
+
+The catalog provides `packageRoot` for both mounts. Shared pure DOM readers live
+as ordinary files inside the package and are read through Bash/VFS; workflows
+combine them with their page function explicitly. No QuickJS imports or injected
+browser SDK is required. Missing resources fail instead of being ignored.
+
+Use native input/navigation commands for actions and observational waits for
+application state. Never automatically repeat failed mutating operations. The
+Web Bash worker serializes concurrent executions, includes queue time in each
+deadline, and cancels queued calls without interrupting another running command.
+Workspace-initiated adapter invocations run directly in the SW after the normal
+WebMCP authorization/routing gates, so target navigation does not lose the final
+response. Chrome supplies target URL/document identity; page code cannot select
+an arbitrary workflow source or forge the target document.
+
+The live E2E suite is `pnpm --dir web test:e2e:webmcp` after rebuilding the extension.
+It loads the actual MV3 build and Web workspace, creates a real isolated OPFS/SQLite
+project, and invokes every manifest workflow on live Jmail/Douban pages through
+normal discovery and WebMCP invocation. It never intercepts site responses or
+substitutes browser, extension or tool APIs. Setup uses the development app's
+own stores to create the workspace without an LLM account; it does not replace
+the tool host. Failed cases retain diagnostics/screenshots in
+`output/playwright/webmcp-real/`. Site/network failures remain failures.
+Set `WEBMCP_E2E_CHROMIUM` to a Chromium/Chrome-for-Testing executable if the installed
+Playwright browser is unavailable; branded Chrome may refuse unpacked extension
+flags. `WEBMCP_E2E_HEADLESS=1` enables headless Chromium where MV3 is supported.
 
 ## Verification
 

@@ -13,7 +13,8 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.stubGlobal('chrome', {
     tabs: { onUpdated: { addListener: onUpdated }, onRemoved: { addListener: onRemoved } },
-    runtime: { onConnect: { addListener: onConnect }, onMessage: { addListener: onMessage } },
+    storage: { onChanged: { addListener: vi.fn() } },
+    runtime: { getURL: (path: string) => 'chrome-extension://test' + path, onConnect: { addListener: onConnect }, onMessage: { addListener: onMessage } },
   })
   installAdapterBackground(() => true, async () => 8)
 })
@@ -28,4 +29,12 @@ it('does not cancel SW workflows on page navigation, refresh or target tab closu
 it('does not inject page authorization gates into workflow execution', () => {
   const dependencies = vi.mocked(createAdapterService).mock.calls[0][0]
   expect(dependencies).not.toHaveProperty('authorize')
+})
+
+it('blocks Web callers from the internal package configuration API', () => {
+  const listener = onMessage.mock.calls[0][0]
+  const respond = vi.fn()
+  const accepted = listener({ type: 'webmcp_packages_set_config', mount: 'builtin-webmcp', directory: 'world.jmail.archive', config: { activation: 'enabled' } }, { id: 'test', url: 'https://trusted-workspace.test' }, respond)
+  expect(accepted).toBe(false)
+  expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: false, code: 'EACCES' }))
 })
