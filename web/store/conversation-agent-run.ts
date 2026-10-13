@@ -16,7 +16,7 @@
  */
 
 import { toast } from 'sonner'
-import { type Conversation, type Message, type ToolCall, type ConversationStatus, type ContextWindowUsage, createRunChangesMessage, createUserMessage } from '@/agent/message-types'
+import { isConversationUserMessage, type Conversation, type Message, type ToolCall, type ConversationStatus, type ContextWindowUsage, createRunChangesMessage, createUserMessage } from '@/agent/message-types'
 import { extractFirstMentionedAgentId } from '@/agent/agent-mention'
 import { emitThinkingStart, emitThinkingDelta, emitCompressionEvent, emitToolStart, emitComplete, emitError } from '@/streaming-bus'
 import { useConversationContextStore } from './conversation-context.store'
@@ -381,7 +381,7 @@ export async function runAgentImpl(
           })
         }
 
-        const lastUserMessage = [...conv.messages].reverse().find((m) => m.role === 'user')
+        const lastUserMessage = [...conv.messages].reverse().find((m) => isConversationUserMessage(m))
 
         const apiKeyRepo = getApiKeyRepository()
         const settingsState = useSettingsStore.getState()
@@ -644,7 +644,7 @@ export async function runAgentImpl(
             conv.compressionLastSummaryConvertCall ?? Number.NEGATIVE_INFINITY,
           initialCompressionBaseline:
             conv.compressedContextSummary && conv.compressedContextCutoffTimestamp
-              ? { summary: conv.compressedContextSummary, cutoffTimestamp: conv.compressedContextCutoffTimestamp }
+              ? { summary: conv.compressedContextSummary, cutoffTimestamp: conv.compressedContextCutoffTimestamp, throughMessageId: [...conv.messages].reverse().find(message => message.kind === 'context_summary')?.compressionBoundary?.throughMessageId }
               : null,
           onCompressionStateUpdate: (compressionState) => {
             if (!isCurrentRun()) return
@@ -993,7 +993,7 @@ export async function runAgentImpl(
               try {
                 const titleConv = get().conversations.find((c) => c.id === conversationId)
                 const userTurnCount = titleConv?.messages.filter(
-                  (m) => m.role === 'user' && (m.content || '').trim().length > 0
+                  (m) => isConversationUserMessage(m) && (m.content || '').trim().length > 0
                 ).length ?? 0
                 if (titleConv && titleConv.titleMode !== 'manual' && userTurnCount <= 2) {
                   get().generateTitle(conversationId, false)
@@ -1576,6 +1576,10 @@ export async function runAgentImpl(
               emitError(errorMsg)
             }
           },
+          onContextCommit: async (messages: Message[]) => {
+            if (!isCurrentRun() || !isCurrentRunEpoch()) throw new Error('Context commit belongs to a stale run')
+            await persistMessageReplace(conversationId, messages, true)
+          },
           onMessagesUpdated: (msgs: Message[]) => {
             if (!isCurrentRun() && !isCurrentRunEpoch()) return
             const previous = get().conversations.find((x) => x.id === conversationId)?.messages || []
@@ -1588,9 +1592,9 @@ export async function runAgentImpl(
               if (!c || (c.runEpoch || 0) !== runEpoch) return
               c.messages = reconciled
               c.compressedContextSummary =
-                reconciled.find((msg) => msg.kind === 'context_summary')?.content || c.compressedContextSummary || null
+                [...reconciled].reverse().find((msg) => msg.kind === 'context_summary')?.content || c.compressedContextSummary || null
               c.compressedContextCutoffTimestamp =
-                reconciled.find((msg) => msg.kind === 'context_summary')?.timestamp ||
+                [...reconciled].reverse().find((msg) => msg.kind === 'context_summary')?.timestamp ||
                 c.compressedContextCutoffTimestamp ||
                 null
               c.updatedAt = Date.now()

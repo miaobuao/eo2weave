@@ -3,6 +3,7 @@
  * Compatible with OpenAI chat completion format.
  */
 
+import type { ContextCommit } from '@/agent/context/journal'
 import type { AssetMeta } from '@/types/asset'
 import type { FlowInstance } from '@/agent/flow/types'
 import type { DeferredContext } from '@/agent/deferred-context'
@@ -75,7 +76,10 @@ export interface Message {
    */
   contentParts?: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>
   /** UI-only classification for special assistant records */
-  kind?: 'normal' | 'context_summary' | 'run_changes'
+  kind?: 'normal' | 'context_summary' | 'run_changes' | 'context_update'
+  /** Immutable context journal record, committed before model dispatch. */
+  contextCommit?: ContextCommit
+  compressionBoundary?: { throughMessageId: string; cutoffTimestamp: number }
   /**
    * Present only on `kind === 'run_changes'` assistant records. Points at the
    * auto-apply snapshot that captured everything this agent run changed, so
@@ -133,6 +137,7 @@ export interface Message {
    * keeps the system prompt stable so prompt caching still hits across
    * turns in the same conversation.
    */
+  pageContextDelivery?: 'journal'
   pageContext?: {
     hostname?: string | null
     url?: string | null
@@ -289,6 +294,11 @@ export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+/** Synthetic context records use the API user role but are not human turns. */
+export function isConversationUserMessage(message: Pick<Message, 'role' | 'kind'>): boolean {
+  return message.role === 'user' && message.kind !== 'context_update' && message.kind !== 'context_summary'
+}
+
 /** Create a user message */
 export function createUserMessage(
   content: string,
@@ -302,7 +312,7 @@ export function createUserMessage(
     content,
     timestamp: Date.now(),
     assets,
-    ...(pageContext ? { pageContext } : {}),
+    ...(pageContext ? { pageContext, pageContextDelivery: 'journal' as const } : {}),
     ...(options?.contentParts ? { contentParts: options.contentParts } : {}),
     ...(options?.readImageHandoff ? { readImageHandoff: options.readImageHandoff } : {}),
   }

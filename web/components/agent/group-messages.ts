@@ -43,7 +43,7 @@ export function groupMessagesIntoTurns(messages: Message[]): Turn[] {
   }
 
   for (const msg of messages) {
-    if (msg.role === 'system' || msg.role === 'tool') {
+    if (msg.role === 'system' || msg.role === 'tool' || msg.kind === 'context_update') {
       continue
     }
 

@@ -10,6 +10,8 @@
  * 6. Max 20 iterations
  */
 
+import { collectContextSources, type ContextSource } from '@/agent/context/journal'
+import { createRuntimeContextSources, collectRuntimeContext } from '@/agent/context/sources'
 import type { ToolContext } from './tools/tool-types'
 import type { Message } from './message-types'
 import { ContextManager } from './context-manager'
@@ -60,6 +62,7 @@ export class AgentLoop {
   private contextManager: ContextManager
   private toolContext: ToolContext
   private maxIterations: number
+  private contextSources: ContextSource[]
   private baseSystemPrompt: string
   private abortController: AbortController | null = null
   private sessionId?: string
@@ -85,6 +88,7 @@ export class AgentLoop {
       this.toolContext.readFileState = new Map()
     }
     this.maxIterations = config.maxIterations ?? MAX_ITERATIONS
+    this.contextSources = config.contextSources ?? []
     this.baseSystemPrompt = config.systemPrompt || DEFAULT_SYSTEM_PROMPT
     this.sessionId = config.sessionId
     this.onLoopComplete = config.onLoopComplete
@@ -145,6 +149,13 @@ export class AgentLoop {
         signal,
         initialMessages: messages,
         callbacks,
+        collectContext: this.skipEnhancements && this.contextSources.length === 0 ? undefined : (() => {
+          const sources = [...(this.skipEnhancements ? [] : createRuntimeContextSources(() => ({
+            baseSystemPrompt: this.baseSystemPrompt, messages, mode: this.mode,
+            toolContext: this.toolContext, sessionId: this.sessionId,
+          }))), ...this.contextSources]
+          return () => this.skipEnhancements ? collectContextSources(sources) : collectRuntimeContext(sources)
+        })(),
         baseSystemPrompt: this.baseSystemPrompt,
         mode: this.mode,
         toolRegistry: this.toolRegistry,
@@ -172,6 +183,7 @@ export class AgentLoop {
         shouldYieldForQueue: this.shouldYieldForQueue,
         sessionId: this.sessionId,
       })
+      this.compressionBaseline = result.compressionBaseline ?? this.compressionBaseline
       allMessages = result.allMessages
       shouldStopForElicitation = result.shouldStopForElicitation
       reachedMaxIterations = result.reachedMaxIterations
@@ -244,7 +256,7 @@ export class AgentLoop {
 
     try {
       // Extract content from non-summary messages for summarization
-      const nonSummaryMessages = messages.filter((msg) => msg.kind !== 'context_summary')
+      const nonSummaryMessages = messages.filter((msg) => msg.kind !== 'context_summary' && msg.kind !== 'context_update')
       const droppedContent = nonSummaryMessages
         .map((msg) => {
           // For multimodal messages, use the text representation for compression.
@@ -299,7 +311,7 @@ export class AgentLoop {
         // is persisted so that the next LLM call uses the trimmed context.
         const cutoffTimestamp = getCompressionCutoffTimestamp(messages)
         if (typeof cutoffTimestamp === 'number') {
-          this.compressionBaseline = { summary, cutoffTimestamp }
+          this.compressionBaseline = { summary, cutoffTimestamp, throughMessageId: messages.at(-1)?.id }
         }
 
         // Update compression state counters
@@ -316,13 +328,14 @@ export class AgentLoop {
           role: 'user',
           content: summary,
           kind: 'context_summary',
+          ...(messages.at(-1) && cutoffTimestamp != null ? { compressionBoundary: { throughMessageId: messages.at(-1)!.id, cutoffTimestamp } } : {}),
           timestamp: Math.max(0, (cutoffTimestamp ?? Date.now()) - 1),
         }
 
         // Include original messages so the store can extract the summary.
         // The store's onMessagesUpdated will ONLY read the summary metadata,
         // not replace c.messages.
-        resultMessages = [summaryMessage, ...messages]
+        resultMessages = [...messages, summaryMessage]
 
         // Notify messages updated so the store can persist the summary
         callbacks?.onMessagesUpdated?.(resultMessages)
@@ -365,6 +378,14 @@ export class AgentLoop {
   async run(messages: Message[], callbacks?: AgentCallbacks): Promise<Message[]> {
     this.abortController = new AbortController()
     const signal = this.abortController.signal
+    const latestSummary = [...messages].reverse().find(message => message.kind === 'context_summary')
+    if (latestSummary?.content) {
+      this.compressionBaseline = {
+        summary: latestSummary.content,
+        cutoffTimestamp: latestSummary.compressionBoundary?.cutoffTimestamp ?? latestSummary.timestamp + 1,
+        throughMessageId: latestSummary.compressionBoundary?.throughMessageId,
+      }
+    }
 
     if (this.skipEnhancements) {
       // Use the base system prompt as-is (no skills, memory, or MCP summaries).

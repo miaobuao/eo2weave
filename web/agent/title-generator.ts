@@ -12,6 +12,7 @@
  *   + recent messages when the transcript is unexpectedly large.
  */
 
+import { isConversationUserMessage } from '@/agent/message-types'
 import { createLLMProvider } from './llm/provider-factory'
 import type { Message } from './message-types'
 import type { LLMProviderType } from '@/agent/providers/types'
@@ -60,10 +61,10 @@ function buildTitleMessages(
 
   // --- Branch 1: compressed conversation ---
   if (compressedContextSummary && compressedContextSummary.trim()) {
-    const recent = messages.slice(-RECENT_MESSAGE_COUNT)
+    const recent = messages.filter(message => message.kind !== 'context_update').slice(-RECENT_MESSAGE_COUNT)
     const recentText = recent
       .map((m) => {
-        const role = m.role === 'user' ? '用户' : '助手'
+        const role = isConversationUserMessage(m) ? '用户' : '助手'
         const content = (m.content || '').trim()
         return content ? `${role}: ${content}` : ''
       })
@@ -84,8 +85,9 @@ function buildTitleMessages(
   // --- Branch 2: not compressed ---
   // First try feeding all messages (volume is small at this point).
   const allText = messages
+    .filter(message => message.kind !== 'context_update')
     .map((m) => {
-      const role = m.role === 'user' ? '用户' : '助手'
+      const role = isConversationUserMessage(m) ? '用户' : '助手'
       const content = (m.content || '').trim()
       return content ? `${role}: ${content}` : ''
     })
@@ -101,14 +103,14 @@ function buildTitleMessages(
   }
 
   // Hard budget guard: keep first user message + recent messages.
-  const firstUser = messages.find((m) => m.role === 'user' && (m.content || '').trim())
+  const firstUser = messages.find((m) => isConversationUserMessage(m) && (m.content || '').trim())
   const headText = firstUser
     ? `用户: ${(firstUser.content || '').trim()}`
     : ''
-  const tail = messages.slice(-RECENT_MESSAGE_COUNT)
+  const tail = messages.filter(message => message.kind !== 'context_update').slice(-RECENT_MESSAGE_COUNT)
   const tailText = tail
     .map((m) => {
-      const role = m.role === 'user' ? '用户' : '助手'
+      const role = isConversationUserMessage(m) ? '用户' : '助手'
       const content = (m.content || '').trim()
       return content ? `${role}: ${content}` : ''
     })
@@ -193,7 +195,7 @@ export async function generateConversationTitle(
   try {
     // Need at least one user message with content to generate a meaningful title.
     const hasUserContent = messages.some(
-      (m) => m.role === 'user' && (m.content || '').trim().length > 0
+      (m) => isConversationUserMessage(m) && (m.content || '').trim().length > 0
     )
     if (!hasUserContent) return null
 
