@@ -95,7 +95,7 @@ export function formatSkillMetadata(skill: SkillMetadata): string {
   const fileExtensions = skill.triggers.fileExtensions?.join(',') || ''
 
   return `<skill>
-<name>${skill.name}</name>
+<name>${skill.source === 'provider' ? skill.id : skill.name}</name>
 <displayName>${skill.name}</displayName>
 <description>${skill.description}</description>
 <category>${skill.category}</category>

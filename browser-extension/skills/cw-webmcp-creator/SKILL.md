@@ -1,7 +1,7 @@
 ---
 name: cw-webmcp-creator
 description: Create and debug WebMCP packages that expose website actions as tools through behavior-tree workflows. Use when a website needs reusable WebMCP tools or an existing package needs repair.
-version: 2.0.0
+version: 1.0.0
 ---
 
 # WebMCP creator

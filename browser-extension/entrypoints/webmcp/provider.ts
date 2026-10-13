@@ -5,8 +5,8 @@ export function installWebMcpProvider(
   send: (type: string, payload: Record<string, unknown>) => Promise<{ ok?: boolean; value?: unknown; error?: string; code?: string }>,
 ): () => void {
   let alive = true
-  const stops = ['webmcp', 'builtin-webmcp'].map(mount => {
-    const readOnly = mount === 'builtin-webmcp'
+  const stops = ['webmcp', 'builtin-webmcp', 'extension-skills'].map(mount => {
+    const readOnly = mount !== 'webmcp'
     const call = async (method: string, path: string, extra: Record<string, unknown> = {}) => {
       const response = await send('webmcp_provider_call', { mount, method, path, ...extra })
       if (!response?.ok) throw Object.assign(new Error(response?.error ?? 'WebMCP storage unavailable'), { code: response?.code ?? 'ENOTCONN' })
@@ -14,8 +14,9 @@ export function installWebMcpProvider(
     }
     return announceProvider({
       version: 1, id: `creatorweave.${mount}`, name: readOnly ? 'Built-in WebMCP adapters' : 'WebMCP adapters', mountName: mount, isAlive: () => alive,
+      ...(mount === 'extension-skills' ? { skillRoots: [''], name: 'CreatorWeave extension skills' } : {}),
       factory() {
-        const denyWrite = () => { if (readOnly) throw new FsError('EROFS', 'Built-in WebMCP is read-only') }
+        const denyWrite = () => { if (readOnly) throw new FsError('EROFS', mount === 'extension-skills' ? 'Extension skills are read-only' : 'Built-in WebMCP is read-only') }
         const provider: FsProvider = {
           readOnly,
           async stat(path) { return await call('stat', path) as Awaited<ReturnType<FsProvider['stat']>> },

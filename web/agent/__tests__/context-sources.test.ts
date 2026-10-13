@@ -5,6 +5,7 @@ import type { SkillMetadata } from '@/skills/skill-types'
 
 const state = vi.hoisted(() => ({ initialized: true, skills: [] as SkillMetadata[] }))
 vi.mock('@/skills/skill-manager', () => ({ getSkillManager: () => ({
+  refreshProviderSkills: async () => {},
   initialized: state.initialized, getSkillMetadata: () => state.skills,
 }) }))
 
@@ -35,4 +36,15 @@ describe('skill source uses the generic environment protocol', () => {
     expect(await collectContextSources([source])).toEqual([])
     state.initialized = true
   })
+})
+
+it('keeps provider skills with the same name distinct in Agent context', async () => {
+  state.initialized = true
+  state.skills = [skill('same'),
+    { ...skill('same'), id: 'provider:one:same', source: 'provider' },
+    { ...skill('same'), id: 'provider:two:same', source: 'provider' }]
+  const source = createRuntimeContextSources(() => input).find(source => source.id === 'skills')!
+  const observations = await collectContextSources([source])
+  expect(Object.keys(observations[0].entries)).toEqual(['provider:one:same', 'provider:two:same', 'same'])
+  expect(observations[0].entries['provider:one:same']).toContain('<name>provider:one:same</name>')
 })

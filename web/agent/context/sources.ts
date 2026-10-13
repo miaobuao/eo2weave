@@ -20,9 +20,10 @@ export function createRuntimeContextSources(input: () => InjectEnhancementsInput
       const { getSkillManager } = await import('@/skills/skill-manager')
       const manager = getSkillManager()
       if (!manager.initialized) return undefined
+      await manager.refreshProviderSkills()
       const { formatSkillMetadata } = await import('@/skills/skill-injection')
       return Object.fromEntries(manager.getSkillMetadata().filter(skill => skill.enabled).map(skill => [
-        skill.name, formatSkillMetadata({ ...skill, tags: [...skill.tags].sort(), triggers: {
+        skill.source === 'provider' ? skill.id : skill.name, formatSkillMetadata({ ...skill, tags: [...skill.tags].sort(), triggers: {
           ...skill.triggers, keywords: [...skill.triggers.keywords].sort(),
           fileExtensions: skill.triggers.fileExtensions ? [...skill.triggers.fileExtensions].sort() : undefined,
         } }),

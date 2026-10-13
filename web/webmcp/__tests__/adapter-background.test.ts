@@ -38,3 +38,12 @@ it('blocks Web callers from the internal package configuration API', () => {
   expect(accepted).toBe(false)
   expect(respond).toHaveBeenCalledWith(expect.objectContaining({ ok: false, code: 'EACCES' }))
 })
+
+it('routes the extension skill mount through the background transport', async () => {
+  const listener = onMessage.mock.calls[0][0]
+  const result = await new Promise<Record<string, unknown>>(resolve => {
+    expect(listener({ type: 'webmcp_provider_call', mount: 'extension-skills', method: 'readFile', path: 'cw-webmcp-creator/SKILL.md' }, {}, resolve)).toBe(true)
+  })
+  expect(result.ok).toBe(true)
+  expect(atob(result.value as string)).toContain('name: cw-webmcp-creator')
+})
