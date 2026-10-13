@@ -605,7 +605,9 @@ test.afterAll(async () => {
   if (profile) await rm(profile, { recursive: true, force: true })
 })
 for (const name of allNames) {
-  test(name, async (_fixtures, testInfo) => {
+  // Playwright requires the destructuring pattern for the fixtures argument.
+  // eslint-disable-next-line no-empty-pattern
+  test(name, async ({}, testInfo) => {
     if (setupError) {
       await testInfo.attach('setup-diagnostics', {
         body: JSON.stringify(events, null, 2),
@@ -665,7 +667,8 @@ for (const name of allNames) {
   })
 }
 
-test('OPFS copy uses the same workflow and package-relative VFS readers', async (_fixtures, testInfo) => {
+// eslint-disable-next-line no-empty-pattern
+test('OPFS copy uses the same workflow and package-relative VFS readers', async ({}, testInfo) => {
   if (setupError) throw setupError
   const page = await context.newPage()
   try {
