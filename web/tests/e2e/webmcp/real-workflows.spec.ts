@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 
 const extensionPath = resolve('../browser-extension/dist/chrome-mv3')
 const sourcePath = resolve('../browser-extension/builtin-webmcp')
+const DEFAULT_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
 const baseURL = process.env.WEBMCP_E2E_BASE_URL || 'http://localhost:5173'
 const packages = readdirSync(sourcePath).map((id) =>
   JSON.parse(readFileSync(join(sourcePath, id, 'manifest.json'), 'utf8'))
@@ -486,15 +488,23 @@ test.beforeAll(async () => {
   test.setTimeout(180000)
   try {
     console.log('LIVE_SETUP launch')
+    const headless = process.env.WEBMCP_E2E_HEADLESS === '1'
     await readFile(join(extensionPath, 'manifest.json'))
     profile = await mkdtemp(join(tmpdir(), 'webmcp-live-'))
     context = await chromium.launchPersistentContext(profile, {
       channel: 'chromium',
       executablePath: process.env.WEBMCP_E2E_CHROMIUM,
-      headless: process.env.WEBMCP_E2E_HEADLESS === '1',
+      headless,
       ignoreDefaultArgs: ['--disable-extensions'],
-      viewport: null,
-      args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
+      viewport: headless ? { width: 1440, height: 900 } : null,
+      // Headless Chrome advertises "HeadlessChrome" and navigator.webdriver, which sites such
+      // as Douban answer with a never-ending loading state. Present a regular Chrome instead.
+      ...(headless ? { userAgent: process.env.WEBMCP_E2E_USER_AGENT || DEFAULT_USER_AGENT } : {}),
+      args: [
+        `--disable-extensions-except=${extensionPath}`,
+        `--load-extension=${extensionPath}`,
+        '--disable-blink-features=AutomationControlled',
+      ],
     })
     const worker =
       context.serviceWorkers()[0] ||
